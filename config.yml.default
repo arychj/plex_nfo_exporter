@@ -20,6 +20,7 @@ export_nfo: true
 export_poster: false
 export_fanart: false
 export_episode_nfo: false
+export_season_nfo: false
 
 # change/add path mapping if plex path is different from local (script) path
 # !!!!!!! OMMIT THE LAST SLASH "/" !!!!!!!!
@@ -65,3 +66,4 @@ roles: false
 
 # log level defaults to info for console and warning for file
 log_level: 
+log_dir: /logs

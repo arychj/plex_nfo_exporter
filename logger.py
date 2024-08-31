@@ -5,12 +5,23 @@ import logging
 import os
 import yaml
 
+with open('config.yml', 'r') as file:
+    config_content = file.read()
+    config = yaml.safe_load(config_content)
+
+try:
+    log_level_str = config.get('log_level').upper()
+except:
+    log_level_str = 'other'
+
+log_base_dir = config.get('log_dir')
+
 # Check if the logs path exist
-if not os.path.exists('/logs'):
-    os.makedirs('/logs')
+if not os.path.exists(log_base_dir):
+    os.makedirs(log_base_dir)
 
 # check and delete oldest log
-files = list(Path('logs/').iterdir())
+files = list(Path(log_base_dir).iterdir())
 files = [f for f in files if f.is_file()]
 if len(files) > 10:
     files.sort(key=lambda f: f.stat().st_mtime)
@@ -20,14 +31,6 @@ if len(files) > 10:
 else:
     pass
 
-with open('config.yml', 'r') as file:
-    config_content = file.read()
-    config = yaml.safe_load(config_content)
-try:
-    log_level_str = config.get('log_level').upper()
-except:
-    log_level_str = 'other'
-
 log_level_console = getattr(logging, log_level_str, logging.INFO)
 log_level_file = getattr(logging, log_level_str, logging.WARNING)
 
@@ -35,7 +38,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 console_handler = logging.StreamHandler()
-file_handler = logging.FileHandler(f"logs/app-{str(datetime.now().date()).replace('-', '')}.log", encoding='utf-8')
+file_handler = logging.FileHandler(f"{log_base_dir}/app-{str(datetime.now().date()).replace('-', '')}.log", encoding='utf-8')
 
 console_handler.setLevel(log_level_console)
 file_handler.setLevel(log_level_file)

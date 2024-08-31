@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
 from io import BytesIO
+from pathlib import Path
 from PIL import Image
 
 from logger import logger
@@ -8,8 +9,11 @@ import datetime
 import os
 import re
 import requests
+import urllib3
 import xml.etree.ElementTree as ET
 import yaml
+
+urllib3.disable_warnings()
 
 def env_var_constructor(loader, node):
     value = loader.construct_scalar(node)
@@ -22,7 +26,7 @@ def env_var_constructor(loader, node):
 def get_library_details(plex_url,headers, library_names):
     if plex_url:
         url = f'{plex_url}/library/sections'
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, verify=False)
 
         if response.status_code == 200:
             root = ET.fromstring(response.content)
@@ -39,9 +43,10 @@ def get_library_details(plex_url,headers, library_names):
 
 def download_image(url, headers, save_path):
     try:
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, verify=False)
         if response.status_code == 200:
             image = Image.open(BytesIO(response.content))
+            image = image.convert('RGB')
             image.save(save_path)
         else:
             logger.error(f"Failed to retrieve image. HTTP Status Code: {response.status_code}")
@@ -50,6 +55,8 @@ def download_image(url, headers, save_path):
 
 def write_nfo(config, nfo_path, library_type, meta_root, media_title, meta_url, headers):
     try:
+        file = Path(nfo_path)
+        file.parent.mkdir(parents=True, exist_ok=True)
         with open(nfo_path, 'w', encoding='utf-8') as nfo:
             nfo.write('<?xml version="1.0" encoding="UTF-8"?>\n')
             nfo.write(f'<{library_type} xsi="http://www.w3.org/2001/XMLSchema-instance" xsd="http://www.w3.org/2001/XMLSchema">\n')
@@ -146,6 +153,8 @@ def write_nfo(config, nfo_path, library_type, meta_root, media_title, meta_url, 
 
 def write_episode_nfo(episode_nfo_path, episode_root, media_title):
     try:
+        file = Path(episode_nfo_path)
+        file.parent.mkdir(parents=True, exist_ok=True)
         with open(episode_nfo_path, 'w', encoding='utf-8') as nfo:
             nfo.write('<?xml version="1.0" encoding="UTF-8"?>\n')
             nfo.write('<episodedetails xsi="http://www.w3.org/2001/XMLSchema-instance" xsd="http://www.w3.org/2001/XMLSchema">\n')
@@ -189,6 +198,45 @@ def write_episode_nfo(episode_nfo_path, episode_root, media_title):
     except Exception as e:
         logger.error(f'[FAILURE] Failed to write episodic NFO for {media_title} due to {e}')
 
+def write_season_nfo(season_nfo_path, season_root, media_title, season_title):
+    try:
+        file = Path(season_nfo_path)
+        file.parent.mkdir(parents=True, exist_ok=True)
+        with open(season_nfo_path, 'w', encoding='utf-8') as nfo:
+            nfo.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+            nfo.write('<seasondetails xsi="http://www.w3.org/2001/XMLSchema-instance" xsd="http://www.w3.org/2001/XMLSchema">\n')
+
+            if season_root.get('parentIndex'):
+                nfo.write(f'  <season>{season_root.get("parentIndex")}</season>\n')
+
+            if season_root.get('index'):
+                nfo.write(f'  <season>{season_root.get("index")}</season>\n')
+
+            if season_root.get('title'):
+                nfo.write(f'  <title>{season_root.get("title")}</title>\n')
+
+            if season_root.get('summary'):
+                nfo.write(f'  <plot>{season_root.get("summary")}</plot>\n')
+
+            if season_root.get('contentRating'):
+                nfo.write(f'  <mpaa>{season_root.get("contentRating")}</mpaa>\n')
+
+            if season_root.get('rating'):
+                nfo.write(f'  <userrating>{season_root.get("rating")}</userrating>\n')
+
+            if season_root.get('originallyAvailableAt'):
+                nfo.write(f'  <aired>{season_root.get("originallyAvailableAt")}</aired>\n')
+
+            if season_root.get('year'):
+                nfo.write(f'  <year>{season_root.get("year")}</year>\n')
+
+            nfo.write('</seasondetails>')
+
+            logger.info(f'[SUCCESS] Season NFO for {media_title}/{season_title} successfully saved to {season_nfo_path}')
+
+    except Exception as e:
+        logger.error(f'[FAILURE] Failed to write season NFO for {media_title}/{season_title} due to {e}')
+
 def main():
     load_dotenv()
     yaml.SafeLoader.add_constructor('!env_var', env_var_constructor)
@@ -213,7 +261,7 @@ def main():
     for library in library_details:
         if baseurl:
             url = f'{baseurl}/library/sections/{library.get("key")}/all'
-            response = requests.get(url, headers=headers)
+            response = requests.get(url, headers=headers, verify=False)
             
             if response.status_code == 200:
                 root = ET.fromstring(response.content)
@@ -228,7 +276,7 @@ def main():
                 for content in library_contents:
                     ratingkey = content.get('ratingKey')
                     meta_url = f'{baseurl}/library/metadata/{ratingkey}'
-                    meta_response = requests.get(meta_url, headers=headers)
+                    meta_response = requests.get(meta_url, headers=headers, verify=False)
                     if meta_response.status_code == 200:
                         meta_root = ET.fromstring(meta_response.content).find(library_root)
 
@@ -260,10 +308,10 @@ def main():
                             else:
                                 write_nfo(config, nfo_path, library_type, meta_root, media_title, meta_url, headers)
 
-                        if config['export_episode_nfo'] and (library_type == 'tvshow'):
+                        if (library_type == 'tvshow') and (config['export_season_nfo'] or config['export_episode_nfo']):
                             try:
                                 meta_season = meta_url + '/children'
-                                meta_season_response = requests.get(meta_season, headers=headers)
+                                meta_season_response = requests.get(meta_season, headers=headers, verify=False)
                                 if meta_season_response.status_code == 200:
                                     meta_season_root = ET.fromstring(meta_season_response.content).findall('Directory')
 
@@ -271,34 +319,88 @@ def main():
                                         season_key = season.get('ratingKey')
 
                                         season_url = meta_url[:meta_url.rfind('/')] + '/' + season_key + '/children'
-                                        season_url_response = requests.get(season_url, headers=headers)
+                                        season_url_response = requests.get(season_url, headers=headers, verify=False)
                                         if season_url_response.status_code == 200:
-                                            season_root = ET.fromstring(season_url_response.content).findall('Video')
+                                            season_root = ET.fromstring(season_url_response.content)
 
-                                            for episode in season_root:
-                                                episode_key = episode.get('ratingKey')
+                                            try:
+                                                if config['export_season_nfo']:
+                                                    season_title = season.get('title')
+                                                    season_path = os.path.dirname(season_root.findall('Video')[0].find('Media').find('Part').get('file'))
+                                                    season_nfo_path = season_path + '/season.nfo'
+                                                    
+                                                    for path_list in path_mapping:
+                                                        season_nfo_path = season_nfo_path.replace(path_list.get('plex'), path_list.get('local'))
 
-                                                episode_url = meta_url[:meta_url.rfind('/')] + '/' + episode_key
-                                                episode_url_response = requests.get(episode_url, headers=headers)
-                                                episode_root = ET.fromstring(episode_url_response.content).find('Video')
+                                                    if os.path.exists(season_nfo_path):
+                                                        file_mod_time = datetime.datetime.fromtimestamp(os.path.getmtime(season_nfo_path))
+                                                        time_difference = current_time - file_mod_time
 
-                                                episode_path = episode_root.find('Media').find('Part').get('file')
-                                                episode_nfo_path = episode_path[:episode_path.rfind('.')] + '.nfo'
+                                                        if time_difference.days < days_difference:
+                                                            write_season_nfo(season_nfo_path, season_root, media_title, season_title)
+                                                        else:
+                                                            logger.info(f'[SKIPPED] Season NFO for {media_title}/{season_title} skipped because there is NFO file older than {days_difference} days')
 
-                                                for path_list in path_mapping:
-                                                    episode_nfo_path = episode_nfo_path.replace(path_list.get('plex'), path_list.get('local'))
-
-                                                if os.path.exists(episode_nfo_path):
-                                                    file_mod_time = datetime.datetime.fromtimestamp(os.path.getmtime(episode_nfo_path))
-                                                    time_difference = current_time - file_mod_time
-
-                                                    if time_difference.days < days_difference:
-                                                        write_episode_nfo(episode_nfo_path, episode_root, media_title)
                                                     else:
-                                                        logger.info(f'[SKIPPED] Episodic NFO for {media_title} skipped because there is NFO file older than {days_difference} days')
+                                                        write_season_nfo(season_nfo_path, season_root, media_title, season_title)
+                                                    
+                                                    if config['export_poster']:
+                                                        try:
+                                                            if season_root.get('thumb'):
+                                                                season_poster_path = season_path + '/poster.jpg'
+                                                            
+                                                                for path_list in path_mapping:
+                                                                    season_poster_path = season_poster_path.replace(path_list.get('plex'), path_list.get('local'))
 
-                                                else:
-                                                    write_episode_nfo(episode_nfo_path, episode_root, media_title)
+                                                                url = baseurl + season_root.get('thumb')
+
+                                                                if os.path.exists(season_poster_path):
+                                                                    file_mod_time = datetime.datetime.fromtimestamp(os.path.getmtime(season_poster_path))
+                                                                    time_difference = current_time - file_mod_time
+                                                                                        
+                                                                    if time_difference.days < days_difference:
+                                                                        download_image(url, headers, season_poster_path)
+                                                                        logger.info(f'[SUCCESS] Poster for {media_title}/{season_title} successfully saved to {season_poster_path}')
+
+                                                                    else:
+                                                                        logger.info(f'[SKIPPED] Poster for {media_title}/{season_title} skipped because there is poster file older than {days_difference} days')
+                                                                else:
+                                                                    download_image(url, headers, season_poster_path)
+                                                                    logger.info(f'[SUCCESS] Poster for {media_title}/{season_title} successfully saved to {season_poster_path}')
+                                                        except Exception as e:
+                                                            logger.info(f'[FAILURE] Failed to write poster for {media_title}/{season_title} due to {e}')
+                                                            import traceback
+                                                            print(traceback.format_exc())
+                                                            exit()
+
+                                            except Exception as e:
+                                                logger.error(f'[FAILURE] Failed to write season NFO for {media_title} due to {e}')
+
+                                            if config['export_episode_nfo']:    
+                                                for episode in season_root.findall('Video'):
+                                                    episode_key = episode.get('ratingKey')
+
+                                                    episode_url = meta_url[:meta_url.rfind('/')] + '/' + episode_key
+                                                    episode_url_response = requests.get(episode_url, headers=headers, verify=False)
+                                                    episode_root = ET.fromstring(episode_url_response.content).find('Video')
+
+                                                    episode_path = episode_root.find('Media').find('Part').get('file')
+                                                    episode_nfo_path = episode_path[:episode_path.rfind('.')] + '.nfo'
+
+                                                    for path_list in path_mapping:
+                                                        episode_nfo_path = episode_nfo_path.replace(path_list.get('plex'), path_list.get('local'))
+
+                                                    if os.path.exists(episode_nfo_path):
+                                                        file_mod_time = datetime.datetime.fromtimestamp(os.path.getmtime(episode_nfo_path))
+                                                        time_difference = current_time - file_mod_time
+
+                                                        if time_difference.days < days_difference:
+                                                            write_episode_nfo(episode_nfo_path, episode_root, media_title)
+                                                        else:
+                                                            logger.info(f'[SKIPPED] Episodic NFO for {media_title} skipped because there is NFO file older than {days_difference} days')
+
+                                                    else:
+                                                        write_episode_nfo(episode_nfo_path, episode_root, media_title)
 
                             except Exception as e:
                                 logger.error(f'[FAILURE] Failed to write episodic NFO for {media_title} due to {e}')

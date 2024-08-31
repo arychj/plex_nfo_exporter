@@ -154,3 +154,7 @@ cython_debug/
 /test*
 
 *ipynb
+
+config.yml
+!config.yml.default
+
