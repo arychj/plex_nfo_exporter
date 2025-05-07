@@ -21,20 +21,20 @@ def main():
         logger=logger
     )
 
+    counter = 0
     libraries = plex.get_libraries(config["library_names"])
     for library in libraries:
         media_type, media_key, medias = plex.get_media(library)
         for media in medias:
             media_metadata = plex.get_metadata(media, media_key)[0]
-            if media_metadata.get("title") != "The Agency":
-                continue
-
+            logger.info(f"[INSPECTING] {media_type} / {media_metadata.get("title")}")
             exporter.export(media_metadata, media_type)
 
             if (media_type == "tvshow") and (config["export_season_nfo"] or config["export_episode_nfo"]):
                 try:
                     seasons = plex.get_seasons(media)
                     for season in seasons:
+                        logger.info(f"[INSPECTING] {media_type} / {media_metadata.get("title")} / {season.get("title")}")
                         try:
                             season_metadata = plex.get_metadata(season, "Directory")[0]
                             
@@ -53,6 +53,12 @@ def main():
                             logger.error(f"[FAILURE] Failed to write season NFO for {media_metadata.get("title")}/{season.get("title")} due to {e}")
                 except Exception as e:
                     logger.error(f"[FAILURE] Failed to write episodic NFO for {media_metadata.get("title")} due to {e}")
+                
+            counter = counter + 1
+            if counter > 50:
+                break
+
+    exporter.finalize()
 
 if __name__ == "__main__":
     main()

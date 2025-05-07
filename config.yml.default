@@ -13,6 +13,7 @@ library_names: ['Movies', 'TV Shows', 'Anime']
 # minimum age (days) for NFO/poster/art not to be replaced
 # i.e setting 15 means any NFO/poster/art file older than 15 days will not be replaced
 # !!!!!!! set lower than how often you plan to run the script !!!!!!!
+# a value of -1 disables the age checker
 days_difference: 4
 
 # true/false choose what to export

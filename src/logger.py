@@ -1,15 +1,14 @@
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Dict
 
 import logging
 import os
 
-from config import Config
-
 class Logger:
     _logger = None
 
-    def get_logger(config: Config):
+    def get_logger(config: Dict[str, Any]) -> logging.Logger:
         if not Logger._logger:
             try:
                 log_level_str = config.get("log_level").upper()

@@ -6,18 +6,20 @@ from typing import Any, Dict, List
 
 from logger import Logger
 from age_checker import AgeChecker
+from file_registry import FileRegistry
 from path_mapper import PathMapper
 from plex import Plex
 
 class Exporter:
-    def __init__(self, config: Dict[str, Any], plex: Plex, logger: Logger):
+    def __init__(self, config: Dict[str, Any], plex: Plex, logger: Logger) -> None:
         self.config = config
         self.plex = plex
         self.logger = logger
         self.path_mapper = PathMapper(config)
         self.age_checker = AgeChecker(config)
-
-    def get_base_path(self, metadata, media_type: str):
+        self.registry = FileRegistry(config, logger)
+        
+    def get_base_path(self, metadata, media_type: str) -> None:
         if media_type in ["movie", "episode"]:
             base_path = os.path.dirname(metadata.find("Media").find("Part").get("file"))
             base_path = Path(base_path)
@@ -31,7 +33,7 @@ class Exporter:
 
         return base_path
 
-    def export(self, metadata, media_type: str):
+    def export(self, metadata, media_type: str) -> None:
         if self.config[f"export_{media_type}_nfo"]:
             try:
                 base_path = self.get_base_path(metadata, media_type)
@@ -94,43 +96,37 @@ class Exporter:
                     if nfo_written:
                         self.logger.info(f"[SUCCESS] {media_type.title()} NFO for {metadata.get('title')} successfully saved to {nfo_path}")
                     else:
-                        self.logger.info(f"[IDENTICAL] {media_type.title()} NFO for {metadata.get('title')} is the same")
+                        self.logger.debug(f"[NOCHANGE] {media_type.title()} NFO for {metadata.get('title')} has not changed since last export")
                 else:
-                    self.logger.info(f"[SKIPPED] {media_type.title()} NFO for {metadata.get('title')} skipped because existing NFO file is age locked")
+                    self.logger.debug(f"[SKIPPED] {media_type.title()} NFO for {metadata.get('title')} skipped because existing NFO file is age locked")
             except Exception as e:
                 self.logger.error(f"[FAILURE] Failed to write {media_type} NFO for {metadata.get('title')} due to {e}")
                 raise e
 
-    def _export_poster(self, metadata, base_path: Path):
+    def finalize(self) -> None:
+        self.registry.save()
+
+    def _export_poster(self, metadata, base_path: Path) -> None:
         if self.config["export_poster"]:
             poster_path = base_path / Path("poster.jpg")
             self._write_image("thumb", metadata, poster_path)
 
-    def _export_fanart(self, metadata, base_path: Path):
+    def _export_fanart(self, metadata, base_path: Path) -> None:
         if self.config['export_fanart']:
             fanart_path = base_path / Path("fanart.jpg")
             self._write_image("art", metadata, fanart_path)
 
-    def _write_nfo(self, nfo_type: str, nfo_path: Path, contents: List[str]):
+    def _write_nfo(self, nfo_type: str, nfo_path: Path, contents: List[str]) -> None:
         root_element = self._get_nfo_root_element(nfo_type)
 
-        xml_parts = [
-            b'<?xml version="1.0" encoding="UTF-8"?>\n',
-            f'<{root_element} xsi="http://www.w3.org/2001/XMLSchema-instance" xsd="http://www.w3.org/2001/XMLSchema">\n  '.encode('utf-8'),
-            "\n  ".join(contents).encode('utf-8'),
-            f'\n</{root_element}>'.encode('utf-8')
-        ]
-        new_content = b"".join(xml_parts)
+        content = "".join([
+            '<?xml version="1.0" encoding="UTF-8"?>\n',
+            f'<{root_element} xsi="http://www.w3.org/2001/XMLSchema-instance" xsd="http://www.w3.org/2001/XMLSchema">\n  ',
+            "\n  ".join(contents),
+            f"\n</{root_element}>"
+        ])
 
-        if nfo_path.exists():
-            with open(nfo_path, "rb") as f:
-                if f.read() == new_content:
-                    return False
-
-        with open(nfo_path, "wb") as f:
-            f.write(new_content)
-        
-        return True
+        return self.registry.write(nfo_path, content)
 
     def _get_parent_file(self, original_path: Path) -> Path:
         parent_dir = original_path.parent
@@ -155,27 +151,27 @@ class Exporter:
         else:
             return False
     
-    def _write_image(self, image_type: str, metadata, image_path: Path):
+    def _write_image(self, image_type: str, metadata, image_path: Path) -> None:
         try:
             if not self.age_checker.is_locked(image_path):
                 image = self.plex.get_image(image_type, metadata)
                 if image:
                     if self._is_same_image(image, image_path):
-                        self.logger.info(f"[IDENTICAL] {image_type} for {metadata.get('title')} is same as identical")
+                        self.logger.debug(f"[NOCHANGE] {image_type} for {metadata.get('title')} is has not changed since last export")
                     elif self._is_same_image(image, image_path, True):
-                        self.logger.info(f"[SKIPPED] {image_type} for {metadata.get('title')} is same as parent")
+                        self.logger.debug(f"[SKIPPED] {image_type} for {metadata.get('title')} is same as parent")
                     else:
-                        image.save(image_path)
+                        self.registry.write(image_path, image)
                         self.logger.info(f"[SUCCESS] {image_type} for {metadata.get('title')} successfully saved to {image_path}")
                 else:
-                    self.logger.info(f"[SKIPPED] {image_type} for {metadata.get('title')} does not exist")
+                    self.logger.debug(f"[SKIPPED] {image_type} for {metadata.get('title')} does not exist")
             else:
-                self.logger.info(f"[SKIPPED] {image_type} for {metadata.get('title')} skipped because existing image is age locked")
+                self.logger.debug(f"[SKIPPED] {image_type} for {metadata.get('title')} skipped because existing image is age locked")
         except Exception as e:
             self.logger.info(f"[FAILURE] {image_type} failed to download due to {e}")
             raise e
     
-    def _get_nfo_name(self, metadata, media_type: str):
+    def _get_nfo_name(self, metadata, media_type: str) -> Path:
         if media_type == "episode":
             episode_path = metadata.find("Media").find("Part").get("file")
             episode_file = os.path.basename(episode_path)
@@ -183,7 +179,7 @@ class Exporter:
         else:
             return Path(f"{media_type}.nfo")
     
-    def _get_nfo_root_element(self, media_type):
+    def _get_nfo_root_element(self, media_type) -> str:
         return self.config["nfo_root_element_mappings"].get(media_type, media_type)
     
     def _get_plex_key(self, nfo_key: str, media_type: str):
@@ -197,6 +193,6 @@ class Exporter:
 
         return mappings.get(nfo_key, nfo_key)
 
-    def _get_media_keys(self, media_type: str):
+    def _get_media_keys(self, media_type: str) -> Dict:
         return self.config["media_keys"].get(media_type, {}) or {}
     
