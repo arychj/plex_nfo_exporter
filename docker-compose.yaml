@@ -1,0 +1,10 @@
+services:
+  hass:
+    build:
+      context: .
+    image: plex-nfo-exporter
+    container_name: plex-nfo-exporter
+    environment:
+      TZ: America/Los_Angeles
+    volumes:
+      - ./config.yml:/usr/src/app/config.yml

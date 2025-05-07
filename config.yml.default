@@ -3,8 +3,9 @@
 
 # change plex url and token here
 # !!!!!!! OMMIT THE LAST SLASH "/" !!!!!!!!
-baseurl: ${PLEX_URL} # i.e http://192.168.1.1:32400 or if reverse proxied i.e. https://plex.yourtld.com
+baseurl: ${PLEX_URL} # i.e http://192.168.8.100:32400 or if reverse proxied i.e. https://plex.yourtld.com
 token: ${PLEX_TOKEN} # how to get token https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/
+tls_verify: true
 
 # input the libraries you want to export NFO/poster/fanart from
 library_names: ['Movies', 'TV Shows', 'Anime']
@@ -16,11 +17,12 @@ days_difference: 4
 
 # true/false choose what to export
 # !!!!!!! do not wrap in quotes !!!!!!!
-export_nfo: true
+export_movie_nfo: true
+export_tvshow_nfo: true
+export_season_nfo: true
+export_episode_nfo: true
 export_poster: false
 export_fanart: false
-export_episode_nfo: false
-export_season_nfo: false
 
 # change/add path mapping if plex path is different from local (script) path
 # !!!!!!! OMMIT THE LAST SLASH "/" !!!!!!!!
@@ -42,27 +44,28 @@ path_mapping: [
 ################################ NFO options ################################
 
 # important
-# set to false if you know you don't want these metadata
-title: true
-agent_id: true # will export all available metadata agent ids
-tagline: true
-plot: true
-year: true
+nfo:
+    # set to false if you know you don't want these metadata
+    title: true
+    agent_id: true # will export all available metadata agent ids
+    tagline: true
+    plot: true
+    year: true
 
-# optionals
-studio: false
-mpaa: false
-criticrating: false
-customrating: false
-runtime: false
-releasedate: false
-genre: false
-country: false
-ratings: false
-directors: false
-writers: false
-roles: false
-# producers: false # there's no equivalent in jellyfin metadata
+    # optionals
+    studio: false
+    mpaa: false
+    criticrating: false
+    customrating: false
+    runtime: false
+    releasedate: false
+    genre: false
+    country: false
+    ratings: false
+    directors: false
+    writers: false
+    roles: false
+    # producers: false # there's no equivalent in jellyfin metadata
 
 # log level defaults to info for console and warning for file
 log_level: 
